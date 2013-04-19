@@ -17,6 +17,8 @@ double getCpuFrequency();
 double getCpuLoad(int measureTime);
 unsigned long long getDiscSize(char* file);
 unsigned long long getFreeDiscSize(char* file);
+unsigned long long getMemSize();
+unsigned long long getFreeMemSize();
 
 
 unsigned long long rdtsc() {
@@ -116,10 +118,37 @@ unsigned long long getFreeDiscSize(char* file) {
 }
 
 
+/**
+ * Gets total RAM size in kb
+ */
+unsigned long long getMemSize() {
+	FILE * mi;
+	mi = fopen("/proc/meminfo", "r");
+	fseek(mi, 17, SEEK_SET);
+	int total;
+	fscanf(mi, "%d", &total);
+	return total;
+}
+
+
+/**
+ * Gets free RAM size
+ */
+unsigned long long getFreeMemSize() {
+	FILE * mi;
+	mi = fopen("/proc/meminfo", "r");
+	fseek(mi, 28+17, SEEK_SET);
+	int total;
+	fscanf(mi, "%d", &total);
+	return total;
+}
+
+
 int main(int argc, char** argv) {
 	puts(argv[0]);
 	printf("CPU frequency: %.3f Mhz\n", getCpuFrequency(1000000));
 	printf("CPU load: %.3f %% \n", 100*getCpuLoad(1000000));
 	printf("Disc size: %.1f/%.1f GB\n", getFreeDiscSize(argv[0])/1000000000., getDiscSize(argv[0])/1000000000.);
+	printf("Memory size: %.1f/%.1f MB\n", getFreeMemSize()/1000., getMemSize()/1000.);
 	return EXIT_SUCCESS;
 }
