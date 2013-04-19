@@ -8,17 +8,22 @@ typedef struct {
 	int user, nice, system, idle, iowait, irq, softirq;
 } LoadInfo;
 
+typedef struct {
+	double frequency, load;
+} CpuInfo;
+
+typedef struct {
+	unsigned long long space, free;
+} DeviceInfo;
+
 unsigned long long rdtsc();
 unsigned long long getDiffInMiliseconds(struct timeval * start, struct timeval * end);
 void getLoadInfo(LoadInfo * loadInfo);
 long long sumAll(LoadInfo * loadInfo);
 long long sumWork(LoadInfo * loadInfo);
-double getCpuFrequency();
-double getCpuLoad(int measureTime);
-unsigned long long getDiscSize(char* file);
-unsigned long long getFreeDiscSize(char* file);
-unsigned long long getMemSize();
-unsigned long long getFreeMemSize();
+void getCpuInfo(CpuInfo * ci, int measureTime);
+void getDiscInfo(DeviceInfo * di, char * file);
+void getMemoryInfo(DeviceInfo * di);
 
 
 unsigned long long rdtsc() {
@@ -58,97 +63,54 @@ long long sumWork(LoadInfo * loadInfo) {
 }
 
 
-/**
- * Gets frequency in Mhz. Works fine according to /proc/cpuinfo.
- * @param measureTime time to measure in microseconds. The longer the measurement
- * the more accurate the results
- */
-double getCpuFrequency(int measureTime) {
+void getCpuInfo(CpuInfo * ci, int measureTime) {
 	struct timeval s,e;
-	unsigned long long start = rdtsc();
+	LoadInfo liStart, liEnd;
+	unsigned long long rStart, rEnd;
+	getLoadInfo(&liStart);
+	rStart = rdtsc();
 	gettimeofday(&s, NULL);
 	usleep(measureTime);
+	rEnd = rdtsc();
+	getLoadInfo(&liEnd);
 	gettimeofday(&e, NULL);
-	unsigned long long end = rdtsc();
 	double time = getDiffInMiliseconds(&s, &e);
-	return (end-start)/(1000*time);
+	ci->frequency = (rEnd-rStart)/(1000*time);
+	ci->load = (sumWork(&liEnd) - sumWork(&liStart))/(double)(sumAll(&liEnd) - sumAll(&liStart));
 }
 
-
-/**
- * Gets the load of CPU over the period.
- * @param measureTime time to measure in microseconds.
- */
-double getCpuLoad(int measureTime) {
-	LoadInfo start, end;
-	getLoadInfo(&start);
-	usleep(measureTime);
-	getLoadInfo(&end);
-	return (sumWork(&end) - sumWork(&start))/(double)(sumAll(&end) - sumAll(&start));
-
-}
-
-/**
- * Retrieves the disc size in Bytes.
- * @param file any file on the filesystem in question.
- */
-unsigned long long getDiscSize(char* file) {
+void getDiscInfo(DeviceInfo * di, char * file) {
 	struct statvfs buf;
 	if (!statvfs(file, &buf)) {
-		return buf.f_blocks*(unsigned long long)buf.f_bsize;
+		di->space = buf.f_blocks*(unsigned long long)buf.f_bsize;
+		di->free = buf.f_bfree*(unsigned long long)buf.f_bsize;
 	} else {
 		puts("Error when accessing disc info\n");
-		return 0;
 	}
 }
 
 
-/**
- * Retrieves the free disc size in Bytes.
- * @param file any file on the filesystem in question.
- */
-unsigned long long getFreeDiscSize(char* file) {
-	struct statvfs buf;
-	if (!statvfs(file, &buf)) {
-		return buf.f_bfree*(unsigned long long)buf.f_bsize;
-	} else {
-		puts("Error when accessing disc info\n");
-		return 0;
-	}
-}
-
-
-/**
- * Gets total RAM size in kb
- */
-unsigned long long getMemSize() {
+void getMemoryInfo(DeviceInfo * di) {
 	FILE * mi;
 	mi = fopen("/proc/meminfo", "r");
 	fseek(mi, 17, SEEK_SET);
-	int total;
-	fscanf(mi, "%d", &total);
-	return total;
-}
-
-
-/**
- * Gets free RAM size
- */
-unsigned long long getFreeMemSize() {
-	FILE * mi;
-	mi = fopen("/proc/meminfo", "r");
-	fseek(mi, 28+17, SEEK_SET);
-	int total;
-	fscanf(mi, "%d", &total);
-	return total;
+	fscanf(mi, "%lld", &(di->space));
+	fseek(mi, 17+28, SEEK_SET);
+	fscanf(mi, "%lld", &(di->free));
+	fclose(mi);
 }
 
 
 int main(int argc, char** argv) {
+	CpuInfo cpuInfo;
+	DeviceInfo discInfo, memoryInfo;
+	getCpuInfo(&cpuInfo, 1000000);
+	getDiscInfo(&discInfo, argv[0]);
+	getMemoryInfo(&memoryInfo);
 	puts(argv[0]);
-	printf("CPU frequency: %.3f Mhz\n", getCpuFrequency(1000000));
-	printf("CPU load: %.3f %% \n", 100*getCpuLoad(1000000));
-	printf("Disc size: %.1f/%.1f GB\n", getFreeDiscSize(argv[0])/1000000000., getDiscSize(argv[0])/1000000000.);
-	printf("Memory size: %.1f/%.1f MB\n", getFreeMemSize()/1000., getMemSize()/1000.);
+	printf("CPU frequency: %.3f Mhz\n", cpuInfo.frequency);
+	printf("CPU load: %.3f %% \n", 100*cpuInfo.load);
+	printf("Disc size: %.1f/%.1f GB\n", discInfo.free/1000000000., discInfo.space/1000000000.);
+	printf("Memory size: %.1f/%.1f MB\n", memoryInfo.free/1000., memoryInfo.space/1000.);
 	return EXIT_SUCCESS;
 }
